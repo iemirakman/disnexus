@@ -1,0 +1,77 @@
+name: DisNexus Multiplatform Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: darwin
+            artifact_name: DisNexus-macOS.dmg
+          - os: windows-latest
+            platform: windows
+            artifact_name: DisNexus-Windows.exe
+          - os: ubuntu-latest
+            platform: linux
+            artifact_name: DisNexus-Linux.AppImage
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      # Linux bağımlılıklarını yükleme (Fyne / Cgo gereksinimleri)
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxxf86vm-dev
+
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      # macOS Derleme (.app & .dmg)
+      - name: Build macOS (.app)
+        if: runner.os == 'macOS'
+        run: |
+          fyne package -os darwin -icon internal/gui/assets/disnexus.png -appID com.disnexus.app
+          hdiutil create -volname DisNexus -srcfolder DisNexus.app -ov -format UDZO DisNexus-macOS.dmg
+
+      # Windows Derleme (.exe)
+      - name: Build Windows (.exe)
+        if: runner.os == 'Windows'
+        run: |
+          fyne package -os windows -icon internal/gui/assets/disnexus.png -appID com.disnexus.app
+          mv DisNexus.exe DisNexus-Windows.exe
+
+      # Linux Derleme (.AppImage)
+      - name: Build Linux (.AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          fyne package -os linux -icon internal/gui/assets/disnexus.png -appID com.disnexus.app
+          mv DisNexus.tar.gz DisNexus-Linux.tar.gz
+
+      # GitHub Release Oluşturma ve Çıktıları Yükleme
+      - name: Upload Artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            DisNexus-macOS.dmg
+            DisNexus-Windows.exe
+            DisNexus-Linux.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
