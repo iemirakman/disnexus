@@ -1,4 +1,4 @@
-name: DisNexus Auto Release & Build
+name: DisNexus Auto Semantic Release
 
 on:
   push:
@@ -114,17 +114,32 @@ jobs:
     needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Semantic Tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+          release_branches: main
+
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./release-assets
           merge-multiple: true
 
-      - name: Create Release & Upload Assets Automatically
+      - name: Create Release & Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.${{ github.run_number }}
-          name: DisNexus v1.1.${{ github.run_number }}
+          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          name: DisNexus ${{ steps.tag_version.outputs.new_tag }}
+          body: ${{ steps.tag_version.outputs.changelog }}
+          make_latest: true
           files: ./release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
