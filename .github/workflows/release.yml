@@ -1,9 +1,9 @@
-name: DisNexus Multiplatform Build & Release
+name: DisNexus Auto Release & Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -54,12 +54,11 @@ jobs:
         run: |
           hdiutil create -volname DisNexus -srcfolder DisNexus.app -ov -format UDZO DisNexus-macOS.dmg
 
-      - name: Upload macOS Asset
-        uses: softprops/action-gh-release@v2
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: DisNexus-macOS.dmg
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: DisNexus-macOS.dmg
+          path: DisNexus-macOS.dmg
 
   build-windows:
     name: Build Windows (.exe)
@@ -77,12 +76,11 @@ jobs:
         run: |
           go build -ldflags="-H windowsgui -s -w" -o DisNexus.exe ./cmd/disnexus
 
-      - name: Upload Windows Asset
-        uses: softprops/action-gh-release@v2
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: DisNexus.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: DisNexus.exe
+          path: DisNexus.exe
 
   build-linux:
     name: Build Linux
@@ -106,9 +104,27 @@ jobs:
           go build -ldflags="-s -w" -o disnexus-linux ./cmd/disnexus
           tar -czvf DisNexus-Linux.tar.gz disnexus-linux
 
-      - name: Upload Linux Asset
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DisNexus-Linux.tar.gz
+          path: DisNexus-Linux.tar.gz
+
+  release:
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-assets
+          merge-multiple: true
+
+      - name: Create Release & Upload Assets Automatically
         uses: softprops/action-gh-release@v2
         with:
-          files: DisNexus-Linux.tar.gz
+          tag_name: v1.0.${{ github.run_number }}
+          name: DisNexus v1.0.${{ github.run_number }}
+          files: ./release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
