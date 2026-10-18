@@ -79,7 +79,7 @@ func (a *App) Run() {
 }
 
 func (a *App) setupSystemTray(logoRes fyne.Resource) {
-	a.statusItem = fyne.NewMenuItem(fmt.Sprintf(i18n.T(a.cfg.Language, "active_links"), 0), func() {})
+	a.statusItem = fyne.NewMenuItem(i18n.T(a.cfg.Language, "active_links", 0), func() {})
 	a.statusItem.Disabled = true
 
 	a.settingsItem = fyne.NewMenuItem(i18n.T(a.cfg.Language, "open_settings"), func() {
@@ -140,13 +140,17 @@ func (a *App) buildSettingsUI() fyne.CanvasObject {
 	portEntry.SetText(a.cfg.SOCKS5Port)
 
 	langLabel := widget.NewLabel(i18n.T(a.cfg.Language, "language_label"))
-	langOpts := []string{"Sistem Dili (Otomatik)", "Türkçe", "English"}
+	langAutoStr := i18n.T(a.cfg.Language, "lang_auto")
+	langTrStr := i18n.T(a.cfg.Language, "lang_tr")
+	langEnStr := i18n.T(a.cfg.Language, "lang_en")
 
-	selLang := "Sistem Dili (Otomatik)"
+	langOpts := []string{langAutoStr, langTrStr, langEnStr}
+
+	selLang := langAutoStr
 	if a.cfg.Language == "tr" {
-		selLang = "Türkçe"
+		selLang = langTrStr
 	} else if a.cfg.Language == "en" {
-		selLang = "English"
+		selLang = langEnStr
 	}
 
 	langSelect := widget.NewSelect(langOpts, func(s string) {})
@@ -160,10 +164,9 @@ func (a *App) buildSettingsUI() fyne.CanvasObject {
 		}
 
 		chosenLang := "auto"
-		switch langSelect.Selected {
-		case "Türkçe":
+		if langSelect.Selected == langTrStr {
 			chosenLang = "tr"
-		case "English":
+		} else if langSelect.Selected == langEnStr {
 			chosenLang = "en"
 		}
 
@@ -202,6 +205,10 @@ func (a *App) buildSettingsUI() fyne.CanvasObject {
 }
 
 func (a *App) settingsItemLabelUpdate() {
+	if a.statusItem != nil {
+		ips := a.mon.GetActiveIPs()
+		a.statusItem.Label = i18n.T(a.cfg.Language, "active_links", len(ips))
+	}
 	if a.settingsItem != nil {
 		a.settingsItem.Label = i18n.T(a.cfg.Language, "open_settings")
 	}
@@ -222,7 +229,7 @@ func (a *App) settingsItemLabelUpdate() {
 
 func (a *App) UpdateStatus(count int) {
 	if a.statusItem != nil {
-		a.statusItem.Label = fmt.Sprintf(i18n.T(a.cfg.Language, "active_links"), count)
+		a.statusItem.Label = i18n.T(a.cfg.Language, "active_links", count)
 		if a.trayMenu != nil {
 			a.trayMenu.Refresh()
 		}

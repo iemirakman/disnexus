@@ -3,6 +3,7 @@ package i18n
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -18,6 +19,9 @@ var translations = map[string]map[string]string{
 		"target_cidr_label": "Target CIDR (Hedef Ağ Bloğu):",
 		"socks5_port_label": "SOCKS5 Proxy Portu:",
 		"language_label":    "Dil / Language:",
+		"lang_auto":         "Sistem Dili (Otomatik)",
+		"lang_tr":           "Türkçe",
+		"lang_en":           "İngilizce",
 		"save_btn":          "Kaydet ve Yeniden Başlat",
 		"saved_success":     "✔ Ayarlar kaydedildi!",
 		"fill_all":          "⚠ Tüm alanları doldurun.",
@@ -34,6 +38,9 @@ var translations = map[string]map[string]string{
 		"target_cidr_label": "Target CIDR:",
 		"socks5_port_label": "SOCKS5 Proxy Port:",
 		"language_label":    "Language:",
+		"lang_auto":         "System Language (Auto)",
+		"lang_tr":           "Turkish",
+		"lang_en":           "English",
 		"save_btn":          "Save & Restart",
 		"saved_success":     "✔ Settings saved!",
 		"fill_all":          "⚠ Please fill all fields.",
@@ -49,6 +56,22 @@ func DetectSystemLang() string {
 	if langEnv == "" {
 		langEnv = os.Getenv("LC_MESSAGES")
 	}
+	if langEnv == "" {
+		langEnv = os.Getenv("APPLELOCALE")
+	}
+	if langEnv == "" {
+		cmd := exec.Command("defaults", "read", "-g", "AppleLocale")
+		if out, err := cmd.Output(); err == nil {
+			langEnv = strings.TrimSpace(string(out))
+		}
+	}
+	if langEnv == "" || (!strings.Contains(strings.ToLower(langEnv), "tr") && !strings.Contains(strings.ToLower(langEnv), "en")) {
+		cmd := exec.Command("defaults", "read", "-g", "AppleLanguages")
+		if out, err := cmd.Output(); err == nil {
+			langEnv = string(out)
+		}
+	}
+
 	langEnv = strings.ToLower(langEnv)
 	if strings.Contains(langEnv, "tr") {
 		return "tr"
