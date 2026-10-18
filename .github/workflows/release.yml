@@ -124,16 +124,18 @@ jobs:
         uses: mathieudutour/github-tag-action@v6.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          default_bump: patch
+          default_bump: false
           release_branches: main
 
       - name: Download All Artifacts
+        if: steps.tag_version.outputs.new_tag != ''
         uses: actions/download-artifact@v4
         with:
           path: ./release-assets
           merge-multiple: true
 
       - name: Create Release & Upload Assets
+        if: steps.tag_version.outputs.new_tag != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag_version.outputs.new_tag }}
