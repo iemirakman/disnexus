@@ -2,6 +2,6 @@
 
 package gui
 
-func init() {
-	// Diğer işletim sistemleri için işlem gerekmez
-}
+func HideDockIcon() {}
+func ShowDockIcon() {}
+

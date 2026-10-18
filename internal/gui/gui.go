@@ -50,6 +50,8 @@ func (a *App) getLogoResource() fyne.Resource {
 }
 
 func (a *App) Run() {
+	HideDockIcon()
+
 	a.fyneApp = app.NewWithID("com.disnexus.app")
 	logoRes := a.getLogoResource()
 	a.fyneApp.SetIcon(logoRes)
@@ -57,7 +59,10 @@ func (a *App) Run() {
 	a.settingsWin = a.fyneApp.NewWindow(i18n.T(a.cfg.Language, "settings_title"))
 	a.settingsWin.Resize(fyne.NewSize(420, 420))
 	a.settingsWin.SetIcon(logoRes)
-	a.settingsWin.SetCloseIntercept(func() { a.settingsWin.Hide() })
+	a.settingsWin.SetCloseIntercept(func() {
+		a.settingsWin.Hide()
+		HideDockIcon()
+	})
 	a.settingsWin.SetContent(a.buildSettingsUI())
 
 	if deskApp, ok := a.fyneApp.(desktop.App); ok {
@@ -83,6 +88,7 @@ func (a *App) setupSystemTray(logoRes fyne.Resource) {
 	a.statusItem.Disabled = true
 
 	a.settingsItem = fyne.NewMenuItem(i18n.T(a.cfg.Language, "open_settings"), func() {
+		ShowDockIcon()
 		a.settingsWin.Show()
 		a.settingsWin.RequestFocus()
 	})
