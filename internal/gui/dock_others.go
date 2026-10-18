@@ -3,5 +3,6 @@
 package gui
 
 func HideDockIcon() {}
-func ShowDockIcon() {}
+func ShowDockIcon(iconBytes []byte) {}
+
 

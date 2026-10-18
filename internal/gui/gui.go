@@ -88,7 +88,7 @@ func (a *App) setupSystemTray(logoRes fyne.Resource) {
 	a.statusItem.Disabled = true
 
 	a.settingsItem = fyne.NewMenuItem(i18n.T(a.cfg.Language, "open_settings"), func() {
-		ShowDockIcon()
+		ShowDockIcon(disnexusLogoPNG)
 		a.settingsWin.Show()
 		a.settingsWin.RequestFocus()
 	})
