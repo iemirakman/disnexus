@@ -6,27 +6,84 @@ on:
       - 'v*'
 
 jobs:
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            artifact: DisNexus-macOS.dmg
-            script: |
-              fyne package -os darwin -icon internal/gui/assets/disnexus.png -appID com.disnexus.app
-              hdiutil create -volname DisNexus -srcfolder DisNexus.app -ov -format UDZO DisNexus-macOS.dmg
-          - os: windows-latest
-            artifact: DisNexus.exe
-            script: |
-              fyne package -os windows -icon internal/gui/assets/disnexus.png -appID com.disnexus.app
-          - os: ubuntu-latest
-            artifact: DisNexus.tar.gz
-            script: |
-              fyne package -os linux -icon internal/gui/assets/disnexus.png -appID com.disnexus.app
+  build-macos:
+    name: Build macOS (.dmg)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build macOS Binary
+        run: |
+          go build -ldflags="-s -w" -o DisNexus.app/Contents/MacOS/disnexus ./cmd/disnexus
+
+      - name: Construct .app Bundle
+        run: |
+          mkdir -p DisNexus.app/Contents/Resources
+          cp internal/gui/assets/disnexus.png DisNexus.app/Contents/Resources/icon.png
+          cat << 'EOF' > DisNexus.app/Contents/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>disnexus</string>
+              <key>CFBundleIconFile</key>
+              <string>icon.png</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.disnexus.app</string>
+              <key>CFBundleName</key>
+              <string>DisNexus</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>LSUIElement</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Create DMG Package
+        run: |
+          hdiutil create -volname DisNexus -srcfolder DisNexus.app -ov -format UDZO DisNexus-macOS.dmg
+
+      - name: Upload macOS Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: DisNexus-macOS.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    name: Build Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build Windows Binary
+        run: |
+          go build -ldflags="-H windowsgui -s -w" -o DisNexus.exe ./cmd/disnexus
+
+      - name: Upload Windows Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: DisNexus.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -37,20 +94,18 @@ jobs:
           go-version: '1.22'
 
       - name: Install Linux Dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxxf86vm-dev
 
-      - name: Install Fyne CLI (Updated Path)
-        run: go install fyne.io/tools/cmd/fyne@latest
+      - name: Build Linux Binary
+        run: |
+          go build -ldflags="-s -w" -o disnexus-linux ./cmd/disnexus
+          tar -czvf DisNexus-Linux.tar.gz disnexus-linux
 
-      - name: Build Package
-        run: ${{ matrix.script }}
-
-      - name: Upload Release Asset
+      - name: Upload Linux Asset
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.artifact }}
+          files: DisNexus-Linux.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
