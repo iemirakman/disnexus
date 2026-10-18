@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	_ "image/png"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -20,6 +21,18 @@ import (
 //go:embed assets/disnexus.png
 var disnexusLogoPNG []byte
 
+//go:embed assets/disnexus_yellow.png
+var disnexusYellowPNG []byte
+
+//go:embed assets/disnexus_green.png
+var disnexusGreenPNG []byte
+
+//go:embed assets/disnexus_red.png
+var disnexusRedPNG []byte
+
+//go:embed assets/disnexus_gray.png
+var disnexusGrayPNG []byte
+
 type Callbacks struct {
 	OnSaveAndRestart func(cfg *config.AppConfig)
 	OnToggle         func(start bool)
@@ -27,26 +40,37 @@ type Callbacks struct {
 }
 
 type App struct {
-	fyneApp      fyne.App
-	settingsWin  fyne.Window
-	mon          *monitor.Monitor
-	cfg          *config.AppConfig
-	cb           Callbacks
-	deskApp      desktop.App
-	bonding      bool
-	statusItem   *fyne.MenuItem
-	settingsItem *fyne.MenuItem
-	toggleItem   *fyne.MenuItem
-	quitItem     *fyne.MenuItem
-	trayMenu     *fyne.Menu
+	fyneApp          fyne.App
+	settingsWin      fyne.Window
+	mon              *monitor.Monitor
+	cfg              *config.AppConfig
+	cb               Callbacks
+	deskApp          desktop.App
+	bonding          bool
+	settingsOpen     bool
+	currentState     string
+	currentLogoBytes []byte
+	statusItem       *fyne.MenuItem
+	settingsItem     *fyne.MenuItem
+	toggleItem       *fyne.MenuItem
+	quitItem         *fyne.MenuItem
+	trayMenu         *fyne.Menu
+	mu               sync.Mutex
 }
 
 func NewApp(mon *monitor.Monitor, cfg *config.AppConfig, cb Callbacks) *App {
-	return &App{mon: mon, cfg: cfg, cb: cb, bonding: true}
+	return &App{
+		mon:              mon,
+		cfg:              cfg,
+		cb:               cb,
+		bonding:          true,
+		currentState:     "connecting",
+		currentLogoBytes: disnexusYellowPNG,
+	}
 }
 
 func (a *App) getLogoResource() fyne.Resource {
-	return fyne.NewStaticResource("disnexus.png", disnexusLogoPNG)
+	return fyne.NewStaticResource("disnexus.png", a.currentLogoBytes)
 }
 
 func (a *App) Run() {
@@ -60,6 +84,9 @@ func (a *App) Run() {
 	a.settingsWin.Resize(fyne.NewSize(420, 420))
 	a.settingsWin.SetIcon(logoRes)
 	a.settingsWin.SetCloseIntercept(func() {
+		a.mu.Lock()
+		a.settingsOpen = false
+		a.mu.Unlock()
 		a.settingsWin.Hide()
 		HideDockIcon()
 	})
@@ -70,10 +97,12 @@ func (a *App) Run() {
 		a.setupSystemTray(logoRes)
 	}
 
+	a.UpdateStatus("connecting")
+
 	go func() {
 		for {
 			ips := a.mon.GetActiveIPs()
-			a.UpdateStatus(len(ips))
+			a.UpdateActiveLinks(len(ips))
 			select {
 			case <-a.mon.OnChange():
 			}
@@ -88,23 +117,33 @@ func (a *App) setupSystemTray(logoRes fyne.Resource) {
 	a.statusItem.Disabled = true
 
 	a.settingsItem = fyne.NewMenuItem(i18n.T(a.cfg.Language, "open_settings"), func() {
-		ShowDockIcon(disnexusLogoPNG)
+		a.mu.Lock()
+		a.settingsOpen = true
+		logo := a.currentLogoBytes
+		a.mu.Unlock()
+		ShowDockIcon(logo)
 		a.settingsWin.Show()
 		a.settingsWin.RequestFocus()
 	})
 
 	a.toggleItem = fyne.NewMenuItem(i18n.T(a.cfg.Language, "stop_bonding"), func() {
+		a.mu.Lock()
 		a.bonding = !a.bonding
-		if a.bonding {
+		isBonding := a.bonding
+		a.mu.Unlock()
+
+		if isBonding {
 			a.toggleItem.Label = i18n.T(a.cfg.Language, "stop_bonding")
+			a.UpdateStatus("connecting")
 		} else {
 			a.toggleItem.Label = i18n.T(a.cfg.Language, "start_bonding")
+			a.UpdateStatus("idle")
 		}
 		if a.trayMenu != nil {
 			a.trayMenu.Refresh()
 		}
 		if a.cb.OnToggle != nil {
-			a.cb.OnToggle(a.bonding)
+			a.cb.OnToggle(isBonding)
 		}
 	})
 
@@ -233,11 +272,67 @@ func (a *App) settingsItemLabelUpdate() {
 	}
 }
 
-func (a *App) UpdateStatus(count int) {
-	if a.statusItem != nil {
-		a.statusItem.Label = i18n.T(a.cfg.Language, "active_links", count)
-		if a.trayMenu != nil {
-			a.trayMenu.Refresh()
+// UpdateStatus uygulamanın durumunu ("connecting", "connected", "error", "idle") günceller,
+// tray menü ve dock ikonunu ilgili duruma göre değiştirir.
+func (a *App) UpdateStatus(state string) {
+	a.mu.Lock()
+	a.currentState = state
+	var logoBytes []byte
+	switch state {
+	case "connecting":
+		logoBytes = disnexusYellowPNG
+	case "connected":
+		logoBytes = disnexusGreenPNG
+	case "error":
+		logoBytes = disnexusRedPNG
+	case "idle":
+		logoBytes = disnexusGrayPNG
+	default:
+		logoBytes = disnexusLogoPNG
+	}
+	a.currentLogoBytes = logoBytes
+	isOpen := a.settingsOpen
+	deskApp := a.deskApp
+	fyneApp := a.fyneApp
+	win := a.settingsWin
+	a.mu.Unlock()
+
+	res := fyne.NewStaticResource("disnexus.png", logoBytes)
+	if deskApp != nil {
+		deskApp.SetSystemTrayIcon(res)
+	}
+	if fyneApp != nil {
+		fyneApp.SetIcon(res)
+	}
+	if win != nil {
+		win.SetIcon(res)
+	}
+	if isOpen {
+		ShowDockIcon(logoBytes)
+	}
+}
+
+// UpdateActiveLinks aktif adaptör sayısına göre menü etiketini ve bağlantı durumunu günceller.
+func (a *App) UpdateActiveLinks(count int) {
+	a.mu.Lock()
+	isBonding := a.bonding
+	lang := a.cfg.Language
+	item := a.statusItem
+	menu := a.trayMenu
+	a.mu.Unlock()
+
+	if item != nil {
+		item.Label = i18n.T(lang, "active_links", count)
+		if menu != nil {
+			menu.Refresh()
 		}
+	}
+
+	if !isBonding {
+		a.UpdateStatus("idle")
+	} else if count > 0 {
+		a.UpdateStatus("connected")
+	} else {
+		a.UpdateStatus("connecting")
 	}
 }
