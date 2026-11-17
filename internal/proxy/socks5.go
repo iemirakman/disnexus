@@ -22,11 +22,11 @@ var bufferPool = sync.Pool{
 
 // Server SOCKS5 proxy sunucusunu temsil eder.
 type Server struct {
-	Port    string
-	Monitor *monitor.Monitor
+	Port     string
+	Monitor  *monitor.Monitor
 	listener net.Listener
-	mu      sync.Mutex
-	closed  bool
+	mu       sync.Mutex
+	closed   bool
 }
 
 // Start proxy sunucusunu başlatır.
@@ -81,61 +81,8 @@ func (s *Server) handleClient(clientConn net.Conn) {
 	// Zombi bağlantıları önlemek için zaman aşımı
 	_ = clientConn.SetDeadline(time.Now().Add(60 * time.Second))
 
-	// SOCKS5 El Sıkışma (Handshake)
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
-
-	n, err := clientConn.Read(buf)
-	if err != nil || n < 2 || buf[0] != 0x05 {
-		return
-	}
-
-	// Kimlik doğrulama gerektirme (No authentication required: 0x00)
-	_, err = clientConn.Write([]byte{0x05, 0x00})
+	targetAddr, err := negotiateSOCKS5(clientConn)
 	if err != nil {
-		return
-	}
-
-	// İstemci isteği (CONNECT komutu)
-	n, err = clientConn.Read(buf)
-	if err != nil || n < 7 || buf[0] != 0x05 || buf[1] != 0x01 {
-		return
-	}
-
-	// Hedef adres tipi ve adresi çözme
-	addrType := buf[3]
-	var targetAddr string
-	var destPort int
-	dataIdx := 4
-
-	switch addrType {
-	case 0x01: // IPv4
-		if n < 10 {
-			return
-		}
-		ip := net.IP(buf[dataIdx : dataIdx+4])
-		dataIdx += 4
-		destPort = int(buf[dataIdx])<<8 | int(buf[dataIdx+1])
-		targetAddr = fmt.Sprintf("%s:%d", ip.String(), destPort)
-	case 0x03: // Domain name
-		addrLen := int(buf[dataIdx])
-		dataIdx++
-		if n < dataIdx+addrLen+2 {
-			return
-		}
-		domain := string(buf[dataIdx : dataIdx+addrLen])
-		dataIdx += addrLen
-		destPort = int(buf[dataIdx])<<8 | int(buf[dataIdx+1])
-		targetAddr = fmt.Sprintf("%s:%d", domain, destPort)
-	case 0x04: // IPv6
-		if n < 22 {
-			return
-		}
-		ip := net.IP(buf[dataIdx : dataIdx+16])
-		dataIdx += 16
-		destPort = int(buf[dataIdx])<<8 | int(buf[dataIdx+1])
-		targetAddr = fmt.Sprintf("[%s]:%d", ip.String(), destPort)
-	default:
 		return
 	}
 
@@ -186,6 +133,77 @@ func (s *Server) handleClient(clientConn net.Conn) {
 	}()
 
 	<-errCh
+}
+
+func negotiateSOCKS5(conn net.Conn) (string, error) {
+	var greeting [2]byte
+	if _, err := io.ReadFull(conn, greeting[:]); err != nil {
+		return "", err
+	}
+	if greeting[0] != 0x05 || greeting[1] == 0 {
+		return "", errors.New("invalid SOCKS5 greeting")
+	}
+
+	methods := make([]byte, int(greeting[1]))
+	if _, err := io.ReadFull(conn, methods); err != nil {
+		return "", err
+	}
+	noAuth := false
+	for _, method := range methods {
+		if method == 0x00 {
+			noAuth = true
+			break
+		}
+	}
+	if !noAuth {
+		_, _ = conn.Write([]byte{0x05, 0xff})
+		return "", errors.New("client does not support no-authentication method")
+	}
+	if _, err := conn.Write([]byte{0x05, 0x00}); err != nil {
+		return "", err
+	}
+
+	var request [4]byte
+	if _, err := io.ReadFull(conn, request[:]); err != nil {
+		return "", err
+	}
+	if request[0] != 0x05 || request[1] != 0x01 || request[2] != 0x00 {
+		return "", errors.New("unsupported SOCKS5 request")
+	}
+
+	var host string
+	switch request[3] {
+	case 0x01:
+		var ip [net.IPv4len]byte
+		if _, err := io.ReadFull(conn, ip[:]); err != nil {
+			return "", err
+		}
+		host = net.IP(ip[:]).String()
+	case 0x03:
+		var size [1]byte
+		if _, err := io.ReadFull(conn, size[:]); err != nil {
+			return "", err
+		}
+		domain := make([]byte, int(size[0]))
+		if _, err := io.ReadFull(conn, domain); err != nil {
+			return "", err
+		}
+		host = string(domain)
+	case 0x04:
+		var ip [net.IPv6len]byte
+		if _, err := io.ReadFull(conn, ip[:]); err != nil {
+			return "", err
+		}
+		host = net.IP(ip[:]).String()
+	default:
+		return "", errors.New("unsupported SOCKS5 address type")
+	}
+
+	var port [2]byte
+	if _, err := io.ReadFull(conn, port[:]); err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(host, fmt.Sprint(int(port[0])<<8|int(port[1]))), nil
 }
 
 func copyWithBuffer(dst net.Conn, src net.Conn, buf []byte) (written int64, err error) {
